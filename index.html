@@ -371,11 +371,22 @@ function speak(text, opts={}){
   if(!text) return;
   try{
     if(ttsAudio){ ttsAudio.pause(); ttsAudio=null; }
-    ttsAudio = new Audio(youdaoUrl(text));
-    ttsAudio.onerror = ()=>browserSpeak(text, opts);
-    ttsAudio.play().catch(err=>{
-      console.warn('youdao tts failed, fallback', err);
+    const a = new Audio(youdaoUrl(text));
+    ttsAudio = a;
+    let fallbackFired = false;
+    const fallback = ()=>{
+      if(fallbackFired) return;
+      fallbackFired = true;
       browserSpeak(text, opts);
+    };
+    a.onerror = fallback;
+    // 2秒内没开始播，也认为失败
+    const timer = setTimeout(()=>{ if(a.readyState<2) fallback(); }, 2500);
+    a.onplaying = ()=>clearTimeout(timer);
+    a.play().catch(err=>{
+      console.warn('youdao tts failed, fallback', err);
+      clearTimeout(timer);
+      fallback();
     });
     return;
   }catch(e){
@@ -552,7 +563,9 @@ async function startComposition(){
 }
 function speakCompositionTitle(){
   const p = cState.poems[cState.idx];
-  speak('请默写：'+p.title);
+  // 有道TTS对含"："或较长文本易500，分两段读：前缀用浏览器TTS，标题用有道
+  browserSpeak('请默写');
+  setTimeout(()=>speak(p.title), 900);
 }
 function nextComposition(){
   if(cState.idx >= cState.poems.length-1){
