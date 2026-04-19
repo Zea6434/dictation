@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>家庭听写默写</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;height:100%;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6fa;color:#222}
+  body{display:flex;flex-direction:column;max-width:640px;margin:0 auto;min-height:100vh}
+  header{background:#4a6cf7;color:#fff;padding:14px 16px;font-size:18px;font-weight:600;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10}
+  header .back{background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 12px;border-radius:6px;font-size:14px}
+  main{flex:1;padding:16px;overflow-y:auto}
+  .view{display:none}
+  .view.active{display:block}
+  .btn{display:block;width:100%;padding:14px;border:none;border-radius:10px;background:#4a6cf7;color:#fff;font-size:16px;font-weight:500;margin:10px 0;cursor:pointer}
+  .btn:active{opacity:.85}
+  .btn.secondary{background:#fff;color:#4a6cf7;border:1px solid #4a6cf7}
+  .btn.danger{background:#e74c3c}
+  .btn.success{background:#27ae60}
+  .btn.warn{background:#f39c12}
+  .btn:disabled{background:#bbb;color:#fff}
+  .row{display:flex;gap:10px}
+  .row .btn{flex:1}
+  textarea,input{width:100%;padding:12px;border:1px solid #d0d4dc;border-radius:8px;font-size:15px;font-family:inherit;background:#fff}
+  textarea{min-height:160px;resize:vertical}
+  .menu-card{background:#fff;border-radius:14px;padding:20px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05);cursor:pointer}
+  .menu-card h2{margin:0 0 6px;font-size:18px;color:#4a6cf7}
+  .menu-card p{margin:0;color:#666;font-size:13px;line-height:1.5}
+  .tip{background:#fff8e1;border-left:4px solid #f39c12;padding:10px 12px;margin:10px 0;border-radius:6px;font-size:13px;color:#7a5d10}
+  .word-display{background:#fff;border-radius:14px;padding:40px 20px;text-align:center;margin:20px 0;min-height:200px;display:flex;flex-direction:column;justify-content:center;align-items:center}
+  .word-display .idx{color:#999;font-size:14px;margin-bottom:12px}
+  .word-display .word{font-size:42px;font-weight:600;letter-spacing:6px}
+  .word-display .pinyin{font-size:18px;color:#4a6cf7;margin-top:10px}
+  .word-display .hint{color:#888;font-size:13px;margin-top:18px}
+  .check-item{background:#fff;padding:14px;border-radius:10px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .check-item .text{font-size:17px;font-weight:500;flex:1;word-break:break-all}
+  .check-item .pin{font-size:11px;color:#fff;background:#f39c12;display:inline-block;margin-left:8px;padding:1px 6px;border-radius:8px;vertical-align:middle}
+  .toggle{display:flex;gap:6px}
+  .toggle button{padding:8px 14px;border:1px solid #ccc;background:#fff;border-radius:6px;font-size:14px;min-width:48px}
+  .toggle button.right{background:#27ae60;color:#fff;border-color:#27ae60}
+  .toggle button.wrong{background:#e74c3c;color:#fff;border-color:#e74c3c}
+  .stats{background:#fff;border-radius:14px;padding:18px;margin-bottom:14px;text-align:center}
+  .stats .rate{font-size:36px;font-weight:700;color:#4a6cf7}
+  .stats .meta{color:#666;font-size:13px;margin-top:6px}
+  .err-item{background:#fff;border-radius:10px;padding:12px;margin-bottom:8px}
+  .err-item .head{display:flex;justify-content:space-between;align-items:center;color:#999;font-size:12px;margin-bottom:6px}
+  .err-item .body{font-size:15px;word-break:break-all;white-space:pre-wrap}
+  .err-item .body .ans{color:#27ae60;margin-top:4px;font-size:13px}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;background:#e8eaf6;color:#4a6cf7;font-size:12px;margin-right:6px}
+  .empty{text-align:center;color:#999;padding:40px 0}
+  label.field{display:block;margin:14px 0 6px;font-size:14px;color:#555;font-weight:500}
+  .filter-bar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .filter-bar button{padding:6px 12px;border:1px solid #ccc;background:#fff;border-radius:16px;font-size:13px}
+  .filter-bar button.on{background:#4a6cf7;color:#fff;border-color:#4a6cf7}
+  .listening{color:#e74c3c;font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <button class="back" id="backBtn" style="display:none" onclick="goHome()">返回</button>
+  <span id="title">家庭听写默写</span>
+</header>
+<main>
+
+<!-- 主菜单 -->
+<div class="view active" id="view-home">
+  <div class="menu-card" onclick="show('view-d-input')">
+    <h2>📖 听写</h2>
+    <p>录入词语，逐个朗读，含3个及以上多音字时屏幕显示词语</p>
+  </div>
+  <div class="menu-card" onclick="show('view-c-input')">
+    <h2>✍️ 默写</h2>
+    <p>录入古诗或文言文题目，朗读题目让学生默写</p>
+  </div>
+  <div class="menu-card" onclick="show('view-err')">
+    <h2>📚 错题本</h2>
+    <p>查看历史错题，支持导出 CSV / 复制 / 删除</p>
+  </div>
+  <div class="tip">提示：首次使用请允许浏览器麦克风权限以识别"下一个/好了"。iOS Safari 不支持语音识别，请使用按钮。</div>
+</div>
+
+<!-- 听写：录入 -->
+<div class="view" id="view-d-input">
+  <label class="field">词汇列表（支持顿号、中英文逗号、空格、换行等任意分隔）</label>
+  <textarea id="d-input" placeholder="示例：&#10;苹果、葡萄，香蕉,西瓜 草莓&#10;多音字：爪&#10;鹰爪zhǎo、凤爪zhǎo、爪牙、张牙舞爪&#10;鸡爪zhuǎ、鸭爪zhuǎ、爪子"></textarea>
+  <div class="tip">📌 出现 <b>"多音字"</b> 三个字后，<b>之后的所有词</b>都切到"屏幕显示"模式（不读音、看字书写）。<br>✂️ 自动忽略：括号说明 <code>(…)（…）</code>、拼音标注（如 <code>zhǎo</code>）、列表符号 <code>•</code> <code>:</code> <code>：</code>。</div>
+  <button class="btn" onclick="startDictation()">开始听写</button>
+  <button class="btn secondary" onclick="loadSample('d')">填入示例</button>
+</div>
+
+<!-- 听写：进行中 -->
+<div class="view" id="view-d-play">
+  <div class="word-display">
+    <div class="idx" id="d-idx">第 1 / 1 个</div>
+    <div class="word" id="d-word">—</div>
+    <div class="pinyin" id="d-pinyin"></div>
+    <div class="hint" id="d-hint">点击"再读一次"或说"下一个"</div>
+  </div>
+  <div class="row">
+    <button class="btn secondary" onclick="speakCurrent()">🔊 再读一次</button>
+    <button class="btn" onclick="nextWord()">下一个 ➡️</button>
+  </div>
+  <button class="btn warn" id="d-mic" onclick="toggleRec('dict')">🎤 开启语音控制</button>
+  <button class="btn danger" onclick="if(confirm('结束本次听写？'))goHome()">结束</button>
+</div>
+
+<!-- 听写：核对 -->
+<div class="view" id="view-d-check">
+  <div class="tip">请逐个勾选对错，或一键全选：</div>
+  <div class="row">
+    <button class="btn success" onclick="markAll('dict',true)">全部正确</button>
+    <button class="btn danger" onclick="markAll('dict',false)">全部错误</button>
+  </div>
+  <div id="d-checklist"></div>
+  <button class="btn" onclick="submitDictation()">提交并查看结果</button>
+</div>
+
+<!-- 默写：录入 -->
+<div class="view" id="view-c-input">
+  <label class="field">题目（如：静夜思 / 出师表节选）</label>
+  <input id="c-title" placeholder="请输入题目">
+  <label class="field">正确内容（用于核对）</label>
+  <textarea id="c-content" placeholder="请录入正确的古诗或文言文原文"></textarea>
+  <button class="btn" onclick="startComposition()">朗读题目开始默写</button>
+  <button class="btn secondary" onclick="loadSample('c')">填入示例</button>
+</div>
+
+<!-- 默写：进行中 -->
+<div class="view" id="view-c-play">
+  <div class="word-display">
+    <div class="idx">默写中</div>
+    <div class="word" id="c-show">—</div>
+    <div class="hint">学生默写完成后说"好了"或点下方按钮</div>
+  </div>
+  <div class="row">
+    <button class="btn secondary" onclick="speakCompositionTitle()">🔊 重读题目</button>
+    <button class="btn" onclick="finishComposition()">✅ 好了，去核对</button>
+  </div>
+  <button class="btn warn" id="c-mic" onclick="toggleRec('comp')">🎤 开启语音控制</button>
+  <button class="btn danger" onclick="if(confirm('结束本次默写？'))goHome()">结束</button>
+</div>
+
+<!-- 默写：核对 -->
+<div class="view" id="view-c-check">
+  <div class="tip">请对照正确内容核对学生默写结果：</div>
+  <div class="word-display" style="padding:20px">
+    <div class="idx" id="c-check-title">题目</div>
+    <div style="font-size:18px;line-height:1.8;white-space:pre-wrap;text-align:left;width:100%" id="c-check-body"></div>
+  </div>
+  <div class="row">
+    <button class="btn success" onclick="submitComposition(true)">✓ 默写正确</button>
+    <button class="btn danger" onclick="submitComposition(false)">✗ 有错误，记入错题本</button>
+  </div>
+</div>
+
+<!-- 结果 -->
+<div class="view" id="view-result">
+  <div class="stats">
+    <div class="rate" id="r-rate">0%</div>
+    <div class="meta" id="r-meta">—</div>
+  </div>
+  <button class="btn" onclick="goHome()">返回首页</button>
+  <button class="btn secondary" onclick="show('view-err')">查看错题本</button>
+</div>
+
+<!-- 错题本 -->
+<div class="view" id="view-err">
+  <div class="filter-bar">
+    <button class="on" data-f="all" onclick="filterErr('all')">全部</button>
+    <button data-f="dict" onclick="filterErr('dict')">听写</button>
+    <button data-f="comp" onclick="filterErr('comp')">默写</button>
+  </div>
+  <div class="row">
+    <button class="btn secondary" onclick="exportCSV()">导出 CSV</button>
+    <button class="btn secondary" onclick="copyClip()">复制文本</button>
+  </div>
+  <button class="btn danger" onclick="clearErr()">清空错题本</button>
+  <div id="err-list"></div>
+</div>
+
+</main>
+
+<script>
+// 多音字字典已废弃，改用文本标记"多音字"三字判断
+
+// ================= 状态 =================
+let dState = {words:[], idx:0, marks:[], polyMode:false};
+let cState = {title:'', content:''};
+let recognizer = null;
+let recActive = false;
+let recMode = null; // 'dict' | 'comp'
+
+// ================= 视图切换 =================
+const TITLES={'view-home':'家庭听写默写','view-d-input':'听写 · 录入','view-d-play':'听写中','view-d-check':'听写 · 核对','view-c-input':'默写 · 录入','view-c-play':'默写中','view-c-check':'默写 · 核对','view-result':'结果','view-err':'错题本'};
+function show(id){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.getElementById('title').textContent = TITLES[id]||'';
+  document.getElementById('backBtn').style.display = id==='view-home'?'none':'inline-block';
+  if(id==='view-err') renderErr();
+  window.scrollTo(0,0);
+}
+function goHome(){ stopRec(); stopSpeak(); show('view-home'); }
+
+// ================= 词汇解析 =================
+// 规则：
+// 1. 任意分隔符（顿号/中英逗号/分号/空格/换行/省略号/冒号等）拆词
+// 2. 出现"多音字"三字后，后续所有词标记为 polyShow=true（屏幕显示模式）
+// 3. 自动剥离词内的括号说明、拼音字母/声调字符、列表符号
+function parseWords(raw){
+  // 拼音字符（含声调），后面紧跟的空白一并吃掉，避免"爪zhuǎ 子"被拆为两词
+  const PIN_RE = /[a-zA-Zāáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜüńň]+[ \t]?/g;
+  // "多音字：X" 或 "多音字X" 整体作为分段标记，标题字（如"爪"）保留为词
+  // 处理顺序：把"多音字：" / "多音字:" / "多音字" 后面紧跟的非分隔字符当作正常词
+  const segs = raw.split(/多音字[：:]?/);
+  let polyMode = false;
+  const out = [];
+  segs.forEach((seg, i)=>{
+    if(i>0) polyMode = true;
+    // 1) 去括号说明（中英文括号）
+    let s = seg.replace(/[\(（][^\)）]*[\)）]/g, ' ');
+    // 2) 剥离拼音及其后的一个空白
+    s = s.replace(PIN_RE, '');
+    // 3) 拆词：. 。 … 都不作分隔符
+    const tokens = s.split(/[\s,，、;；:：\n\r\t·•●◆■\?？!！—\-]+/);
+    tokens.forEach(tok=>{
+      const w = tok.trim();
+      if(!w) return;
+      out.push({word:w, pinyin:'', polyShow:polyMode});
+    });
+  });
+  return {words:out, hasPoly:polyMode};
+}
+
+// ================= TTS（有道词典发音 + 浏览器兜底） =================
+let ttsAudio = null;
+function youdaoUrl(text){
+  // le=zh 强制中文，比 type=1 稳定
+  return 'https://dict.youdao.com/dictvoice?audio=' + encodeURIComponent(text) + '&le=zh';
+}
+function speak(text, opts={}){
+  if(!text) return;
+  try{
+    if(ttsAudio){ ttsAudio.pause(); ttsAudio=null; }
+    ttsAudio = new Audio(youdaoUrl(text));
+    ttsAudio.onerror = ()=>browserSpeak(text, opts);
+    ttsAudio.play().catch(err=>{
+      console.warn('youdao tts failed, fallback', err);
+      browserSpeak(text, opts);
+    });
+    return;
+  }catch(e){
+    browserSpeak(text, opts);
+  }
+}
+function browserSpeak(text, opts={}){
+  if(!('speechSynthesis' in window)){ return; }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'zh-CN';
+  u.rate = opts.rate||0.85;
+  u.pitch = 1;
+  speechSynthesis.speak(u);
+}
+function stopSpeak(){
+  if(ttsAudio){ try{ttsAudio.pause()}catch(e){} ttsAudio=null; }
+  if('speechSynthesis' in window) speechSynthesis.cancel();
+}
+
+// ================= 听写流程 =================
+function startDictation(){
+  const raw = document.getElementById('d-input').value;
+  const {words} = parseWords(raw);
+  if(!words.length){ alert('请先录入词汇'); return; }
+  dState = {words, idx:0, marks:words.map(()=>null)};
+  const polyN = words.filter(w=>w.polyShow).length;
+  const normalN = words.length - polyN;
+  // 列出全部词，便于核对解析结果
+  const list = words.map((w,i)=>`${i+1}.${w.polyShow?'[屏]':'[读]'}${w.word}`).join('\n');
+  if(!confirm(`共 ${words.length} 个词（朗读 ${normalN} + 屏幕 ${polyN}）：\n\n${list}\n\n开始？`)) return;
+  show('view-d-play');
+  renderCurrent();
+  setTimeout(speakCurrent, 300);
+}
+function renderCurrent(){
+  const w = dState.words[dState.idx];
+  document.getElementById('d-idx').textContent = `第 ${dState.idx+1} / ${dState.words.length} 个`;
+  const polyHide = !!w.polyShow;
+  document.getElementById('d-word').textContent = polyHide ? w.word : '🔊';
+  document.getElementById('d-pinyin').textContent = polyHide ? '（多音字 · 看屏幕书写）' : '';
+  document.getElementById('d-hint').textContent = polyHide ? '请按屏幕显示的词语书写' : '听音书写，说"下一个"或点按钮继续';
+}
+function speakCurrent(){
+  const w = dState.words[dState.idx];
+  if(w.polyShow){
+    speak('请看屏幕');
+    return;
+  }
+  // 读两遍，第一遍结束后再读第二遍
+  speakTwice(w.word);
+}
+function speakTwice(text){
+  if(ttsAudio){ try{ttsAudio.pause()}catch(e){} }
+  ttsAudio = new Audio(youdaoUrl(text));
+  ttsAudio.onended = ()=>{
+    setTimeout(()=>{
+      const a2 = new Audio(youdaoUrl(text));
+      ttsAudio = a2;
+      a2.onerror = ()=>browserSpeak(text);
+      a2.play().catch(()=>browserSpeak(text));
+    }, 600);
+  };
+  ttsAudio.onerror = ()=>{
+    browserSpeak(text);
+    setTimeout(()=>browserSpeak(text), Math.max(1200, text.length*450));
+  };
+  ttsAudio.play().catch(err=>{
+    console.warn('youdao failed', err);
+    browserSpeak(text);
+    setTimeout(()=>browserSpeak(text), Math.max(1200, text.length*450));
+  });
+}
+function nextWord(){
+  if(dState.idx >= dState.words.length-1){
+    // 完成
+    speak('听写已完成，进入核对');
+    renderCheckList();
+    show('view-d-check');
+    return;
+  }
+  dState.idx++;
+  renderCurrent();
+  setTimeout(speakCurrent, 300);
+}
+function renderCheckList(){
+  const box = document.getElementById('d-checklist');
+  box.innerHTML = '';
+  dState.words.forEach((w,i)=>{
+    const div = document.createElement('div');
+    div.className = 'check-item';
+    div.innerHTML = `<div class="text">${w.word}${w.polyShow?'<span class="pin">多音字</span>':''}</div>
+      <div class="toggle">
+        <button onclick="markOne(${i},true,this)">对</button>
+        <button onclick="markOne(${i},false,this)">错</button>
+      </div>`;
+    box.appendChild(div);
+  });
+}
+function markOne(i, right, btn){
+  dState.marks[i] = right;
+  const sib = btn.parentElement.querySelectorAll('button');
+  sib.forEach(b=>b.classList.remove('right','wrong'));
+  btn.classList.add(right?'right':'wrong');
+}
+function markAll(mode, right){
+  if(mode==='dict'){
+    dState.marks = dState.marks.map(()=>right);
+    document.querySelectorAll('#d-checklist .toggle').forEach(t=>{
+      const bs = t.querySelectorAll('button');
+      bs.forEach(b=>b.classList.remove('right','wrong'));
+      bs[right?0:1].classList.add(right?'right':'wrong');
+    });
+  }
+}
+function submitDictation(){
+  if(dState.marks.some(m=>m===null)){ if(!confirm('还有未勾选的词，按错误处理？')) return; dState.marks = dState.marks.map(m=>m===null?false:m); }
+  const wrongs = dState.words.filter((_,i)=>dState.marks[i]===false);
+  const correct = dState.words.length - wrongs.length;
+  const rate = Math.round(correct*100/dState.words.length);
+  // 记录错题
+  const ts = Date.now();
+  const errs = wrongs.map(w=>({type:'dict', ts, title:'听写', text:w.word, pinyin:w.pinyin, answer:w.word}));
+  appendErrors(errs);
+  appendHistory({type:'dict', ts, total:dState.words.length, correct, rate});
+  document.getElementById('r-rate').textContent = rate + '%';
+  document.getElementById('r-meta').textContent = `共 ${dState.words.length} 词，正确 ${correct}，错误 ${wrongs.length}`;
+  show('view-result');
+}
+
+// ================= 默写流程 =================
+function startComposition(){
+  const t = document.getElementById('c-title').value.trim();
+  const c = document.getElementById('c-content').value.trim();
+  if(!t||!c){ alert('请填写题目和正确内容'); return; }
+  cState = {title:t, content:c};
+  document.getElementById('c-show').textContent = t;
+  show('view-c-play');
+  setTimeout(speakCompositionTitle, 300);
+}
+function speakCompositionTitle(){
+  speak('请默写：'+cState.title);
+}
+function finishComposition(){
+  document.getElementById('c-check-title').textContent = '题目：'+cState.title;
+  document.getElementById('c-check-body').textContent = cState.content;
+  show('view-c-check');
+}
+function submitComposition(right){
+  const ts = Date.now();
+  if(!right){
+    appendErrors([{type:'comp', ts, title:cState.title, text:cState.title, answer:cState.content}]);
+  }
+  appendHistory({type:'comp', ts, total:1, correct:right?1:0, rate:right?100:0});
+  document.getElementById('r-rate').textContent = right?'100%':'0%';
+  document.getElementById('r-meta').textContent = `默写：${cState.title} ${right?'✓ 正确':'✗ 已记入错题本'}`;
+  show('view-result');
+}
+
+// ================= 错题本 =================
+const KEY_ERR='hw_errorbook';
+const KEY_HIS='hw_history';
+let errFilter='all';
+function loadErr(){ try{return JSON.parse(localStorage.getItem(KEY_ERR)||'[]')}catch(e){return []} }
+function saveErr(a){ localStorage.setItem(KEY_ERR, JSON.stringify(a)); }
+function appendErrors(items){
+  if(!items.length) return;
+  const all = loadErr();
+  saveErr(all.concat(items));
+}
+function appendHistory(rec){
+  let h=[]; try{h=JSON.parse(localStorage.getItem(KEY_HIS)||'[]')}catch(e){}
+  h.push(rec); localStorage.setItem(KEY_HIS, JSON.stringify(h));
+}
+function filterErr(f){
+  errFilter=f;
+  document.querySelectorAll('.filter-bar button').forEach(b=>b.classList.toggle('on', b.dataset.f===f));
+  renderErr();
+}
+function renderErr(){
+  const list = loadErr().filter(e=>errFilter==='all'||e.type===errFilter);
+  const box = document.getElementById('err-list');
+  if(!list.length){ box.innerHTML='<div class="empty">暂无错题</div>'; return; }
+  box.innerHTML = list.slice().reverse().map((e,ri)=>{
+    const idx = list.length-1-ri;
+    const realIdx = loadErr().lastIndexOf(e);
+    const date = new Date(e.ts).toLocaleString('zh-CN');
+    const tag = e.type==='dict'?'听写':'默写';
+    const ans = e.type==='comp'?`<div class="ans">正确内容：${escapeHtml(e.answer)}</div>`:(e.pinyin?`<div class="ans">拼音：${e.pinyin}</div>`:'');
+    return `<div class="err-item">
+      <div class="head"><span><span class="badge">${tag}</span>${date}</span>
+      <button onclick="delErr(${realIdx})" style="border:none;background:none;color:#e74c3c;font-size:13px">删除</button></div>
+      <div class="body">${escapeHtml(e.text)}${ans}</div>
+    </div>`;
+  }).join('');
+}
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function delErr(i){
+  if(!confirm('删除这条错题？')) return;
+  const a = loadErr(); a.splice(i,1); saveErr(a); renderErr();
+}
+function clearErr(){
+  if(!confirm('确认清空所有错题？此操作不可恢复')) return;
+  saveErr([]); renderErr();
+}
+function exportCSV(){
+  const list = loadErr().filter(e=>errFilter==='all'||e.type===errFilter);
+  if(!list.length){ alert('无可导出'); return; }
+  const head = '类型,时间,题目/词,拼音,正确内容\n';
+  const rows = list.map(e=>[
+    e.type==='dict'?'听写':'默写',
+    new Date(e.ts).toLocaleString('zh-CN'),
+    csv(e.text), csv(e.pinyin||''), csv(e.answer||'')
+  ].join(',')).join('\n');
+  const blob = new Blob(['\ufeff'+head+rows], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `错题本_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+function csv(s){ s=String(s||''); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; }
+function copyClip(){
+  const list = loadErr().filter(e=>errFilter==='all'||e.type===errFilter);
+  if(!list.length){ alert('无可复制'); return; }
+  const txt = list.map(e=>{
+    const tag = e.type==='dict'?'[听写]':'[默写]';
+    const t = new Date(e.ts).toLocaleString('zh-CN');
+    return `${tag} ${t}\n${e.text}${e.pinyin?` (${e.pinyin})`:''}${e.answer&&e.type==='comp'?`\n答案：${e.answer}`:''}`;
+  }).join('\n\n');
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(txt).then(()=>alert('已复制到剪贴板')).catch(()=>fallbackCopy(txt));
+  } else fallbackCopy(txt);
+}
+function fallbackCopy(t){
+  const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta);
+  ta.select(); document.execCommand('copy'); ta.remove(); alert('已复制');
+}
+
+// ================= 语音识别 =================
+function toggleRec(mode){
+  if(recActive){ stopRec(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ alert('当前浏览器不支持语音识别（iOS Safari限制），请用按钮'); return; }
+  recognizer = new SR();
+  recognizer.lang = 'zh-CN';
+  recognizer.continuous = true;
+  recognizer.interimResults = false;
+  recognizer.onresult = (ev)=>{
+    for(let i=ev.resultIndex;i<ev.results.length;i++){
+      const t = ev.results[i][0].transcript.trim();
+      handleVoice(t);
+    }
+  };
+  recognizer.onerror = (e)=>{ console.warn('rec err',e.error); };
+  recognizer.onend = ()=>{ if(recActive) try{recognizer.start()}catch(e){} };
+  try{ recognizer.start(); }catch(e){ alert('启动失败：'+e.message); return; }
+  recActive = true; recMode = mode;
+  const btnId = mode==='dict'?'d-mic':'c-mic';
+  document.getElementById(btnId).textContent = '🛑 关闭语音控制（监听中）';
+  document.getElementById(btnId).classList.add('listening');
+}
+function stopRec(){
+  if(recognizer){ try{recognizer.stop()}catch(e){} recognizer=null; }
+  recActive=false;
+  ['d-mic','c-mic'].forEach(id=>{
+    const el=document.getElementById(id); if(el){ el.textContent='🎤 开启语音控制'; el.classList.remove('listening'); }
+  });
+}
+function handleVoice(text){
+  if(recMode==='dict'){
+    if(/下一个|继续|next/i.test(text)) nextWord();
+    else if(/再读|重读|重复/.test(text)) speakCurrent();
+  } else if(recMode==='comp'){
+    if(/好了|完成|done|结束/i.test(text)) finishComposition();
+    else if(/重读|再读/.test(text)) speakCompositionTitle();
+  }
+}
+
+// ================= 示例 =================
+function loadSample(t){
+  if(t==='d'){
+    document.getElementById('d-input').value = '举世闻名、设计、创举、减轻、不但……而且、坚固、美观、体现、才干、宝贵、历史、文化、赵州桥、拱形、济南、栏杆\n• 多音字：爪\n鹰爪zhǎo、凤爪zhǎo、爪zhǎo牙、张牙舞爪zhǎo\n鸡爪zhuǎ、鸭爪zhuǎ、爪zhuǎ子';
+  } else {
+    document.getElementById('c-title').value = '静夜思';
+    document.getElementById('c-content').value = '床前明月光，疑是地上霜。\n举头望明月，低头思故乡。';
+  }
+}
+
+// 启动
+show('view-home');
+</script>
+</body>
+</html>
