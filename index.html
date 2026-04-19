@@ -120,7 +120,7 @@
 <div class="view" id="view-c-input">
   <label class="field">古诗题目（每行一个，或用顿号/逗号分隔）</label>
   <textarea id="c-titles" placeholder="示例：&#10;静夜思&#10;望庐山瀑布&#10;春晓、登鹳雀楼"></textarea>
-  <div class="tip">📚 内置70+首小初必背古诗，输入题目即可。<b>找不到的诗会标红</b>，可在核对时手动核对。</div>
+  <div class="tip">📚 内置70+首小初必背 + 联网唐宋三百首兜底（首次需联网下载约400KB）。<b>未找到的会标红</b>。</div>
   <button class="btn" onclick="startComposition()">开始默写</button>
   <button class="btn secondary" onclick="loadSample('c')">填入示例</button>
 </div>
@@ -269,6 +269,52 @@ function findPoem(title){
   const t = title.replace(/[\s·・]/g,'').toLowerCase();
   return POEMS.find(p=>{
     const pt = p.title.replace(/[\s·・]/g,'').toLowerCase();
+    return pt===t || pt.includes(t) || t.includes(pt);
+  });
+}
+
+// ================= 在线古诗扩展库（首次加载唐诗300+宋词300+opencc） =================
+let onlineLib = null; // {poems:[...], converter:fn}
+let onlineLoading = null;
+async function loadOnlineLib(){
+  if(onlineLib) return onlineLib;
+  if(onlineLoading) return onlineLoading;
+  onlineLoading = (async()=>{
+    const cdn = 'https://cdn.jsdelivr.net/gh/chinese-poetry/chinese-poetry@master';
+    const opencc_url = 'https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/t2cn.js';
+    // 并行加载
+    const [tang, song, opencc] = await Promise.all([
+      fetch(cdn+'/全唐诗/唐诗三百首.json').then(r=>r.json()),
+      fetch(cdn+'/宋词/宋词三百首.json').then(r=>r.json()),
+      fetch(opencc_url).then(r=>r.text())
+    ]);
+    // 注入opencc到全局
+    new Function(opencc + ';window.OpenCC = OpenCC;')();
+    const conv = window.OpenCC.Converter({from:'t', to:'cn'});
+    const poems = [
+      ...tang.map(p=>({
+        title: conv(p.title),
+        author: conv(p.author),
+        dynasty: '唐',
+        content: p.paragraphs.map(s=>conv(s)).join('\n')
+      })),
+      ...song.map(p=>({
+        title: conv(p.rhythmic||p.title||''),
+        author: conv(p.author),
+        dynasty: '宋',
+        content: p.paragraphs.map(s=>conv(s)).join('\n')
+      }))
+    ];
+    onlineLib = {poems, converter:conv};
+    return onlineLib;
+  })();
+  return onlineLoading;
+}
+function findInOnline(title){
+  if(!onlineLib) return null;
+  const t = title.replace(/[\s·・]/g,'').toLowerCase();
+  return onlineLib.poems.find(p=>{
+    const pt = (p.title||'').replace(/[\s·・]/g,'').toLowerCase();
     return pt===t || pt.includes(t) || t.includes(pt);
   });
 }
@@ -463,21 +509,40 @@ function submitDictation(){
 }
 
 // ================= 默写流程 =================
-function startComposition(){
+async function startComposition(){
   const raw = document.getElementById('c-titles').value.trim();
   if(!raw){ alert('请输入古诗题目'); return; }
-  // 同样的多分隔符拆分
   const titles = raw.split(/[\s,，、;；\n\r\t]+/).map(s=>s.trim()).filter(Boolean);
   if(!titles.length){ alert('请输入古诗题目'); return; }
-  const poems = titles.map(t=>{
-    const found = findPoem(t);
-    return found
-      ? {title:found.title, author:found.author, dynasty:found.dynasty, content:found.content, found:true, input:t}
-      : {title:t, author:'?', dynasty:'?', content:'(未在内置库中找到，请手动核对)', found:false, input:t};
+  // 第一轮：内置库
+  let poems = titles.map(t=>{
+    const f = findPoem(t);
+    return f
+      ? {title:f.title, author:f.author, dynasty:f.dynasty, content:f.content, found:true, input:t}
+      : {title:t, author:'', dynasty:'', content:'', found:false, input:t};
   });
-  const missing = poems.filter(p=>!p.found).map(p=>p.input);
+  const missing = poems.filter(p=>!p.found);
+  // 第二轮：在线扩展库（唐宋三百首）
   if(missing.length){
-    if(!confirm(`共 ${poems.length} 首，其中 ${missing.length} 首未找到：\n${missing.join('、')}\n\n仍然继续？（未找到的诗只能手动判定）`)) return;
+    const btn = event && event.target;
+    if(btn){ btn.disabled=true; btn.textContent='正在联网搜索古诗…'; }
+    try{
+      await loadOnlineLib();
+      poems = poems.map(p=>{
+        if(p.found) return p;
+        const f = findInOnline(p.input);
+        if(f) return {title:f.title, author:f.author, dynasty:f.dynasty, content:f.content, found:true, input:p.input};
+        return p;
+      });
+    }catch(e){
+      console.warn('online lib failed', e);
+      alert('在线搜索失败：'+e.message+'\n将仅用内置库');
+    }
+    if(btn){ btn.disabled=false; btn.textContent='开始默写'; }
+  }
+  const stillMissing = poems.filter(p=>!p.found).map(p=>p.input);
+  if(stillMissing.length){
+    if(!confirm(`共 ${poems.length} 首，其中 ${stillMissing.length} 首未找到：\n${stillMissing.join('、')}\n\n仍然继续？（未找到的诗只能手动判定）`)) return;
   }
   cState = {poems, idx:0, marks:poems.map(()=>null)};
   document.getElementById('c-idx').textContent = `第 1 / ${poems.length} 首`;
@@ -511,8 +576,9 @@ function renderCompositionCheck(){
     div.style.flexDirection = 'column';
     div.style.alignItems = 'stretch';
     const meta = p.found
-      ? `<span style="color:#888;font-size:13px">${p.author} · ${p.dynasty}</span>`
-      : `<span style="color:#e74c3c;font-size:13px">未在库中</span>`;
+      ? `<span style="color:#888;font-size:13px">${p.author||''}${p.dynasty?' · '+p.dynasty:''}</span>`
+      : `<span style="color:#e74c3c;font-size:13px">未找到（手动核对）</span>`;
+    const body = p.found ? p.content : '（库中未找到正文，请家长手动判定）';
     div.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div><b style="font-size:17px">${escapeHtml(p.title)}</b> ${meta}</div>
@@ -521,7 +587,7 @@ function renderCompositionCheck(){
           <button onclick="markOne(${i},false,this)">错</button>
         </div>
       </div>
-      <div style="font-size:15px;line-height:1.8;white-space:pre-wrap;color:#333;background:#f8f9fc;padding:10px;border-radius:6px">${escapeHtml(p.content)}</div>
+      <div style="font-size:15px;line-height:1.8;white-space:pre-wrap;color:#333;background:#f8f9fc;padding:10px;border-radius:6px">${escapeHtml(body)}</div>
     `;
     box.appendChild(div);
   });
