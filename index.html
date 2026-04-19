@@ -269,7 +269,7 @@ function findPoem(title){
   const t = title.replace(/[\s·・]/g,'').toLowerCase();
   return POEMS.find(p=>{
     const pt = p.title.replace(/[\s·・]/g,'').toLowerCase();
-    return pt===t || pt.includes(t) || t.includes(pt);
+    return pt===t;
   });
 }
 
@@ -315,7 +315,7 @@ function findInOnline(title){
   const t = title.replace(/[\s·・]/g,'').toLowerCase();
   return onlineLib.poems.find(p=>{
     const pt = (p.title||'').replace(/[\s·・]/g,'').toLowerCase();
-    return pt===t || pt.includes(t) || t.includes(pt);
+    return pt===t;
   });
 }
 
