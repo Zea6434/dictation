@@ -71,7 +71,7 @@
   </div>
   <div class="menu-card" onclick="show('view-c-input')">
     <h2>✍️ 默写</h2>
-    <p>录入古诗或文言文题目，朗读题目让学生默写</p>
+    <p>输入古诗题目即可，自动朗读题目，默写完成后展示作者朝代正文供核对</p>
   </div>
   <div class="menu-card" onclick="show('view-err')">
     <h2>📚 错题本</h2>
@@ -118,24 +118,23 @@
 
 <!-- 默写：录入 -->
 <div class="view" id="view-c-input">
-  <label class="field">题目（如：静夜思 / 出师表节选）</label>
-  <input id="c-title" placeholder="请输入题目">
-  <label class="field">正确内容（用于核对）</label>
-  <textarea id="c-content" placeholder="请录入正确的古诗或文言文原文"></textarea>
-  <button class="btn" onclick="startComposition()">朗读题目开始默写</button>
+  <label class="field">古诗题目（每行一个，或用顿号/逗号分隔）</label>
+  <textarea id="c-titles" placeholder="示例：&#10;静夜思&#10;望庐山瀑布&#10;春晓、登鹳雀楼"></textarea>
+  <div class="tip">📚 内置70+首小初必背古诗，输入题目即可。<b>找不到的诗会标红</b>，可在核对时手动核对。</div>
+  <button class="btn" onclick="startComposition()">开始默写</button>
   <button class="btn secondary" onclick="loadSample('c')">填入示例</button>
 </div>
 
 <!-- 默写：进行中 -->
 <div class="view" id="view-c-play">
   <div class="word-display">
-    <div class="idx">默写中</div>
+    <div class="idx" id="c-idx">第 1 / 1 首</div>
     <div class="word" id="c-show">—</div>
-    <div class="hint">学生默写完成后说"好了"或点下方按钮</div>
+    <div class="hint" id="c-hint">学生默写完成后说"下一首"或点按钮</div>
   </div>
   <div class="row">
     <button class="btn secondary" onclick="speakCompositionTitle()">🔊 重读题目</button>
-    <button class="btn" onclick="finishComposition()">✅ 好了，去核对</button>
+    <button class="btn" onclick="nextComposition()">下一首 ➡️</button>
   </div>
   <button class="btn warn" id="c-mic" onclick="toggleRec('comp')">🎤 开启语音控制</button>
   <button class="btn danger" onclick="if(confirm('结束本次默写？'))goHome()">结束</button>
@@ -143,15 +142,13 @@
 
 <!-- 默写：核对 -->
 <div class="view" id="view-c-check">
-  <div class="tip">请对照正确内容核对学生默写结果：</div>
-  <div class="word-display" style="padding:20px">
-    <div class="idx" id="c-check-title">题目</div>
-    <div style="font-size:18px;line-height:1.8;white-space:pre-wrap;text-align:left;width:100%" id="c-check-body"></div>
-  </div>
+  <div class="tip">📖 对照下面的正文核对，逐首勾选对错或一键全选：</div>
   <div class="row">
-    <button class="btn success" onclick="submitComposition(true)">✓ 默写正确</button>
-    <button class="btn danger" onclick="submitComposition(false)">✗ 有错误，记入错题本</button>
+    <button class="btn success" onclick="markAll('comp',true)">全部正确</button>
+    <button class="btn danger" onclick="markAll('comp',false)">全部错误</button>
   </div>
+  <div id="c-checklist"></div>
+  <button class="btn" onclick="submitComposition()">提交并查看结果</button>
 </div>
 
 <!-- 结果 -->
@@ -186,10 +183,95 @@
 
 // ================= 状态 =================
 let dState = {words:[], idx:0, marks:[], polyMode:false};
-let cState = {title:'', content:''};
+let cState = {poems:[], idx:0, marks:[]};
 let recognizer = null;
 let recActive = false;
 let recMode = null; // 'dict' | 'comp'
+
+// ================= 古诗库（小学初中必背常见篇目） =================
+const POEMS = [
+  // 唐诗
+  {title:'静夜思',author:'李白',dynasty:'唐',content:'床前明月光，疑是地上霜。\n举头望明月，低头思故乡。'},
+  {title:'望庐山瀑布',author:'李白',dynasty:'唐',content:'日照香炉生紫烟，遥看瀑布挂前川。\n飞流直下三千尺，疑是银河落九天。'},
+  {title:'早发白帝城',author:'李白',dynasty:'唐',content:'朝辞白帝彩云间，千里江陵一日还。\n两岸猿声啼不住，轻舟已过万重山。'},
+  {title:'赠汪伦',author:'李白',dynasty:'唐',content:'李白乘舟将欲行，忽闻岸上踏歌声。\n桃花潭水深千尺，不及汪伦送我情。'},
+  {title:'黄鹤楼送孟浩然之广陵',author:'李白',dynasty:'唐',content:'故人西辞黄鹤楼，烟花三月下扬州。\n孤帆远影碧空尽，唯见长江天际流。'},
+  {title:'独坐敬亭山',author:'李白',dynasty:'唐',content:'众鸟高飞尽，孤云独去闲。\n相看两不厌，只有敬亭山。'},
+  {title:'春晓',author:'孟浩然',dynasty:'唐',content:'春眠不觉晓，处处闻啼鸟。\n夜来风雨声，花落知多少。'},
+  {title:'登鹳雀楼',author:'王之涣',dynasty:'唐',content:'白日依山尽，黄河入海流。\n欲穷千里目，更上一层楼。'},
+  {title:'凉州词',author:'王之涣',dynasty:'唐',content:'黄河远上白云间，一片孤城万仞山。\n羌笛何须怨杨柳，春风不度玉门关。'},
+  {title:'出塞',author:'王昌龄',dynasty:'唐',content:'秦时明月汉时关，万里长征人未还。\n但使龙城飞将在，不教胡马度阴山。'},
+  {title:'芙蓉楼送辛渐',author:'王昌龄',dynasty:'唐',content:'寒雨连江夜入吴，平明送客楚山孤。\n洛阳亲友如相问，一片冰心在玉壶。'},
+  {title:'鹿柴',author:'王维',dynasty:'唐',content:'空山不见人，但闻人语响。\n返景入深林，复照青苔上。'},
+  {title:'送元二使安西',author:'王维',dynasty:'唐',content:'渭城朝雨浥轻尘，客舍青青柳色新。\n劝君更尽一杯酒，西出阳关无故人。'},
+  {title:'九月九日忆山东兄弟',author:'王维',dynasty:'唐',content:'独在异乡为异客，每逢佳节倍思亲。\n遥知兄弟登高处，遍插茱萸少一人。'},
+  {title:'相思',author:'王维',dynasty:'唐',content:'红豆生南国，春来发几枝。\n愿君多采撷，此物最相思。'},
+  {title:'山居秋暝',author:'王维',dynasty:'唐',content:'空山新雨后，天气晚来秋。\n明月松间照，清泉石上流。\n竹喧归浣女，莲动下渔舟。\n随意春芳歇，王孙自可留。'},
+  {title:'咏柳',author:'贺知章',dynasty:'唐',content:'碧玉妆成一树高，万条垂下绿丝绦。\n不知细叶谁裁出，二月春风似剪刀。'},
+  {title:'回乡偶书',author:'贺知章',dynasty:'唐',content:'少小离家老大回，乡音无改鬓毛衰。\n儿童相见不相识，笑问客从何处来。'},
+  {title:'凉州词',author:'王翰',dynasty:'唐',content:'葡萄美酒夜光杯，欲饮琵琶马上催。\n醉卧沙场君莫笑，古来征战几人回。'},
+  {title:'枫桥夜泊',author:'张继',dynasty:'唐',content:'月落乌啼霜满天，江枫渔火对愁眠。\n姑苏城外寒山寺，夜半钟声到客船。'},
+  {title:'游子吟',author:'孟郊',dynasty:'唐',content:'慈母手中线，游子身上衣。\n临行密密缝，意恐迟迟归。\n谁言寸草心，报得三春晖。'},
+  {title:'春夜喜雨',author:'杜甫',dynasty:'唐',content:'好雨知时节，当春乃发生。\n随风潜入夜，润物细无声。\n野径云俱黑，江船火独明。\n晓看红湿处，花重锦官城。'},
+  {title:'绝句',author:'杜甫',dynasty:'唐',content:'两个黄鹂鸣翠柳，一行白鹭上青天。\n窗含西岭千秋雪，门泊东吴万里船。'},
+  {title:'江畔独步寻花',author:'杜甫',dynasty:'唐',content:'黄四娘家花满蹊，千朵万朵压枝低。\n留连戏蝶时时舞，自在娇莺恰恰啼。'},
+  {title:'望岳',author:'杜甫',dynasty:'唐',content:'岱宗夫如何？齐鲁青未了。\n造化钟神秀，阴阳割昏晓。\n荡胸生层云，决眦入归鸟。\n会当凌绝顶，一览众山小。'},
+  {title:'春望',author:'杜甫',dynasty:'唐',content:'国破山河在，城春草木深。\n感时花溅泪，恨别鸟惊心。\n烽火连三月，家书抵万金。\n白头搔更短，浑欲不胜簪。'},
+  {title:'闻官军收河南河北',author:'杜甫',dynasty:'唐',content:'剑外忽传收蓟北，初闻涕泪满衣裳。\n却看妻子愁何在，漫卷诗书喜欲狂。\n白日放歌须纵酒，青春作伴好还乡。\n即从巴峡穿巫峡，便下襄阳向洛阳。'},
+  {title:'悯农',author:'李绅',dynasty:'唐',content:'锄禾日当午，汗滴禾下土。\n谁知盘中餐，粒粒皆辛苦。'},
+  {title:'悯农其一',author:'李绅',dynasty:'唐',content:'春种一粒粟，秋收万颗子。\n四海无闲田，农夫犹饿死。'},
+  {title:'江雪',author:'柳宗元',dynasty:'唐',content:'千山鸟飞绝，万径人踪灭。\n孤舟蓑笠翁，独钓寒江雪。'},
+  {title:'寻隐者不遇',author:'贾岛',dynasty:'唐',content:'松下问童子，言师采药去。\n只在此山中，云深不知处。'},
+  {title:'赋得古原草送别',author:'白居易',dynasty:'唐',content:'离离原上草，一岁一枯荣。\n野火烧不尽，春风吹又生。\n远芳侵古道，晴翠接荒城。\n又送王孙去，萋萋满别情。'},
+  {title:'草',author:'白居易',dynasty:'唐',content:'离离原上草，一岁一枯荣。\n野火烧不尽，春风吹又生。'},
+  {title:'忆江南',author:'白居易',dynasty:'唐',content:'江南好，风景旧曾谙。\n日出江花红胜火，春来江水绿如蓝。\n能不忆江南？'},
+  {title:'池上',author:'白居易',dynasty:'唐',content:'小娃撑小艇，偷采白莲回。\n不解藏踪迹，浮萍一道开。'},
+  {title:'暮江吟',author:'白居易',dynasty:'唐',content:'一道残阳铺水中，半江瑟瑟半江红。\n可怜九月初三夜，露似真珠月似弓。'},
+  {title:'赠刘景文',author:'苏轼',dynasty:'宋',content:'荷尽已无擎雨盖，菊残犹有傲霜枝。\n一年好景君须记，最是橙黄橘绿时。'},
+  {title:'饮湖上初晴后雨',author:'苏轼',dynasty:'宋',content:'水光潋滟晴方好，山色空蒙雨亦奇。\n欲把西湖比西子，淡妆浓抹总相宜。'},
+  {title:'题西林壁',author:'苏轼',dynasty:'宋',content:'横看成岭侧成峰，远近高低各不同。\n不识庐山真面目，只缘身在此山中。'},
+  {title:'惠崇春江晚景',author:'苏轼',dynasty:'宋',content:'竹外桃花三两枝，春江水暖鸭先知。\n蒌蒿满地芦芽短，正是河豚欲上时。'},
+  {title:'念奴娇·赤壁怀古',author:'苏轼',dynasty:'宋',content:'大江东去，浪淘尽，千古风流人物。\n故垒西边，人道是，三国周郎赤壁。\n乱石穿空，惊涛拍岸，卷起千堆雪。\n江山如画，一时多少豪杰。\n遥想公瑾当年，小乔初嫁了，雄姿英发。\n羽扇纶巾，谈笑间，樯橹灰飞烟灭。\n故国神游，多情应笑我，早生华发。\n人生如梦，一尊还酹江月。'},
+  {title:'水调歌头',author:'苏轼',dynasty:'宋',content:'明月几时有？把酒问青天。\n不知天上宫阙，今夕是何年。\n我欲乘风归去，又恐琼楼玉宇，高处不胜寒。\n起舞弄清影，何似在人间。\n转朱阁，低绮户，照无眠。\n不应有恨，何事长向别时圆？\n人有悲欢离合，月有阴晴圆缺，此事古难全。\n但愿人长久，千里共婵娟。'},
+  {title:'江雪',author:'柳宗元',dynasty:'唐',content:'千山鸟飞绝，万径人踪灭。\n孤舟蓑笠翁，独钓寒江雪。'},
+  {title:'梅花',author:'王安石',dynasty:'宋',content:'墙角数枝梅，凌寒独自开。\n遥知不是雪，为有暗香来。'},
+  {title:'泊船瓜洲',author:'王安石',dynasty:'宋',content:'京口瓜洲一水间，钟山只隔数重山。\n春风又绿江南岸，明月何时照我还。'},
+  {title:'元日',author:'王安石',dynasty:'宋',content:'爆竹声中一岁除，春风送暖入屠苏。\n千门万户曈曈日，总把新桃换旧符。'},
+  {title:'书湖阴先生壁',author:'王安石',dynasty:'宋',content:'茅檐长扫净无苔，花木成畦手自栽。\n一水护田将绿绕，两山排闼送青来。'},
+  {title:'示儿',author:'陆游',dynasty:'宋',content:'死去元知万事空，但悲不见九州同。\n王师北定中原日，家祭无忘告乃翁。'},
+  {title:'游山西村',author:'陆游',dynasty:'宋',content:'莫笑农家腊酒浑，丰年留客足鸡豚。\n山重水复疑无路，柳暗花明又一村。\n箫鼓追随春社近，衣冠简朴古风存。\n从今若许闲乘月，拄杖无时夜叩门。'},
+  {title:'秋夜将晓出篱门迎凉有感',author:'陆游',dynasty:'宋',content:'三万里河东入海，五千仞岳上摩天。\n遗民泪尽胡尘里，南望王师又一年。'},
+  {title:'晓出净慈寺送林子方',author:'杨万里',dynasty:'宋',content:'毕竟西湖六月中，风光不与四时同。\n接天莲叶无穷碧，映日荷花别样红。'},
+  {title:'小池',author:'杨万里',dynasty:'宋',content:'泉眼无声惜细流，树阴照水爱晴柔。\n小荷才露尖尖角，早有蜻蜓立上头。'},
+  {title:'宿新市徐公店',author:'杨万里',dynasty:'宋',content:'篱落疏疏一径深，树头新绿未成阴。\n儿童急走追黄蝶，飞入菜花无处寻。'},
+  {title:'四时田园杂兴',author:'范成大',dynasty:'宋',content:'昼出耘田夜绩麻，村庄儿女各当家。\n童孙未解供耕织，也傍桑阴学种瓜。'},
+  {title:'乡村四月',author:'翁卷',dynasty:'宋',content:'绿遍山原白满川，子规声里雨如烟。\n乡村四月闲人少，才了蚕桑又插田。'},
+  {title:'春日',author:'朱熹',dynasty:'宋',content:'胜日寻芳泗水滨，无边光景一时新。\n等闲识得东风面，万紫千红总是春。'},
+  {title:'观书有感',author:'朱熹',dynasty:'宋',content:'半亩方塘一鉴开，天光云影共徘徊。\n问渠那得清如许？为有源头活水来。'},
+  {title:'夏日绝句',author:'李清照',dynasty:'宋',content:'生当作人杰，死亦为鬼雄。\n至今思项羽，不肯过江东。'},
+  {title:'如梦令',author:'李清照',dynasty:'宋',content:'昨夜雨疏风骤，浓睡不消残酒。\n试问卷帘人，却道海棠依旧。\n知否，知否？应是绿肥红瘦。'},
+  {title:'清平乐·村居',author:'辛弃疾',dynasty:'宋',content:'茅檐低小，溪上青青草。\n醉里吴音相媚好，白发谁家翁媪？\n大儿锄豆溪东，中儿正织鸡笼。\n最喜小儿亡赖，溪头卧剥莲蓬。'},
+  {title:'西江月·夜行黄沙道中',author:'辛弃疾',dynasty:'宋',content:'明月别枝惊鹊，清风半夜鸣蝉。\n稻花香里说丰年，听取蛙声一片。\n七八个星天外，两三点雨山前。\n旧时茅店社林边，路转溪桥忽见。'},
+  {title:'墨梅',author:'王冕',dynasty:'元',content:'我家洗砚池头树，朵朵花开淡墨痕。\n不要人夸好颜色，只留清气满乾坤。'},
+  {title:'石灰吟',author:'于谦',dynasty:'明',content:'千锤万凿出深山，烈火焚烧若等闲。\n粉骨碎身浑不怕，要留清白在人间。'},
+  {title:'竹石',author:'郑燮',dynasty:'清',content:'咬定青山不放松，立根原在破岩中。\n千磨万击还坚劲，任尔东西南北风。'},
+  {title:'己亥杂诗',author:'龚自珍',dynasty:'清',content:'九州生气恃风雷，万马齐喑究可哀。\n我劝天公重抖擞，不拘一格降人才。'},
+  // 文言文/词
+  {title:'敕勒歌',author:'佚名',dynasty:'南北朝',content:'敕勒川，阴山下。\n天似穹庐，笼盖四野。\n天苍苍，野茫茫，风吹草低见牛羊。'},
+  {title:'咏鹅',author:'骆宾王',dynasty:'唐',content:'鹅，鹅，鹅，曲项向天歌。\n白毛浮绿水，红掌拨清波。'},
+  {title:'风',author:'李峤',dynasty:'唐',content:'解落三秋叶，能开二月花。\n过江千尺浪，入竹万竿斜。'},
+  {title:'画',author:'王维',dynasty:'唐',content:'远看山有色，近听水无声。\n春去花还在，人来鸟不惊。'},
+  {title:'悯农其二',author:'李绅',dynasty:'唐',content:'锄禾日当午，汗滴禾下土。\n谁知盘中餐，粒粒皆辛苦。'},
+  {title:'江南',author:'汉乐府',dynasty:'汉',content:'江南可采莲，莲叶何田田。\n鱼戏莲叶间。\n鱼戏莲叶东，鱼戏莲叶西，鱼戏莲叶南，鱼戏莲叶北。'},
+  {title:'长歌行',author:'汉乐府',dynasty:'汉',content:'青青园中葵，朝露待日晞。\n阳春布德泽，万物生光辉。\n常恐秋节至，焜黄华叶衰。\n百川东到海，何时复西归？\n少壮不努力，老大徒伤悲！'},
+];
+function findPoem(title){
+  const t = title.replace(/[\s·・]/g,'').toLowerCase();
+  return POEMS.find(p=>{
+    const pt = p.title.replace(/[\s·・]/g,'').toLowerCase();
+    return pt===t || pt.includes(t) || t.includes(pt);
+  });
+}
 
 // ================= 视图切换 =================
 const TITLES={'view-home':'家庭听写默写','view-d-input':'听写 · 录入','view-d-play':'听写中','view-d-check':'听写 · 核对','view-c-input':'默写 · 录入','view-c-play':'默写中','view-c-check':'默写 · 核对','view-result':'结果','view-err':'错题本'};
@@ -348,20 +430,22 @@ function renderCheckList(){
   });
 }
 function markOne(i, right, btn){
-  dState.marks[i] = right;
+  const mode = btn.closest('#d-checklist') ? 'dict' : 'comp';
+  const state = mode==='dict' ? dState : cState;
+  state.marks[i] = right;
   const sib = btn.parentElement.querySelectorAll('button');
   sib.forEach(b=>b.classList.remove('right','wrong'));
   btn.classList.add(right?'right':'wrong');
 }
 function markAll(mode, right){
-  if(mode==='dict'){
-    dState.marks = dState.marks.map(()=>right);
-    document.querySelectorAll('#d-checklist .toggle').forEach(t=>{
-      const bs = t.querySelectorAll('button');
-      bs.forEach(b=>b.classList.remove('right','wrong'));
-      bs[right?0:1].classList.add(right?'right':'wrong');
-    });
-  }
+  const state = mode==='dict' ? dState : cState;
+  const listSel = mode==='dict' ? '#d-checklist' : '#c-checklist';
+  state.marks = state.marks.map(()=>right);
+  document.querySelectorAll(listSel+' .toggle').forEach(t=>{
+    const bs = t.querySelectorAll('button');
+    bs.forEach(b=>b.classList.remove('right','wrong'));
+    bs[right?0:1].classList.add(right?'right':'wrong');
+  });
 }
 function submitDictation(){
   if(dState.marks.some(m=>m===null)){ if(!confirm('还有未勾选的词，按错误处理？')) return; dState.marks = dState.marks.map(m=>m===null?false:m); }
@@ -380,30 +464,87 @@ function submitDictation(){
 
 // ================= 默写流程 =================
 function startComposition(){
-  const t = document.getElementById('c-title').value.trim();
-  const c = document.getElementById('c-content').value.trim();
-  if(!t||!c){ alert('请填写题目和正确内容'); return; }
-  cState = {title:t, content:c};
-  document.getElementById('c-show').textContent = t;
+  const raw = document.getElementById('c-titles').value.trim();
+  if(!raw){ alert('请输入古诗题目'); return; }
+  // 同样的多分隔符拆分
+  const titles = raw.split(/[\s,，、;；\n\r\t]+/).map(s=>s.trim()).filter(Boolean);
+  if(!titles.length){ alert('请输入古诗题目'); return; }
+  const poems = titles.map(t=>{
+    const found = findPoem(t);
+    return found
+      ? {title:found.title, author:found.author, dynasty:found.dynasty, content:found.content, found:true, input:t}
+      : {title:t, author:'?', dynasty:'?', content:'(未在内置库中找到，请手动核对)', found:false, input:t};
+  });
+  const missing = poems.filter(p=>!p.found).map(p=>p.input);
+  if(missing.length){
+    if(!confirm(`共 ${poems.length} 首，其中 ${missing.length} 首未找到：\n${missing.join('、')}\n\n仍然继续？（未找到的诗只能手动判定）`)) return;
+  }
+  cState = {poems, idx:0, marks:poems.map(()=>null)};
+  document.getElementById('c-idx').textContent = `第 1 / ${poems.length} 首`;
+  document.getElementById('c-show').textContent = poems[0].title;
   show('view-c-play');
   setTimeout(speakCompositionTitle, 300);
 }
 function speakCompositionTitle(){
-  speak('请默写：'+cState.title);
+  const p = cState.poems[cState.idx];
+  speak('请默写：'+p.title);
 }
-function finishComposition(){
-  document.getElementById('c-check-title').textContent = '题目：'+cState.title;
-  document.getElementById('c-check-body').textContent = cState.content;
-  show('view-c-check');
-}
-function submitComposition(right){
-  const ts = Date.now();
-  if(!right){
-    appendErrors([{type:'comp', ts, title:cState.title, text:cState.title, answer:cState.content}]);
+function nextComposition(){
+  if(cState.idx >= cState.poems.length-1){
+    speak('全部默写完成，进入核对');
+    renderCompositionCheck();
+    show('view-c-check');
+    return;
   }
-  appendHistory({type:'comp', ts, total:1, correct:right?1:0, rate:right?100:0});
-  document.getElementById('r-rate').textContent = right?'100%':'0%';
-  document.getElementById('r-meta').textContent = `默写：${cState.title} ${right?'✓ 正确':'✗ 已记入错题本'}`;
+  cState.idx++;
+  const p = cState.poems[cState.idx];
+  document.getElementById('c-idx').textContent = `第 ${cState.idx+1} / ${cState.poems.length} 首`;
+  document.getElementById('c-show').textContent = p.title;
+  setTimeout(speakCompositionTitle, 300);
+}
+function renderCompositionCheck(){
+  const box = document.getElementById('c-checklist');
+  box.innerHTML = '';
+  cState.poems.forEach((p,i)=>{
+    const div = document.createElement('div');
+    div.className = 'check-item';
+    div.style.flexDirection = 'column';
+    div.style.alignItems = 'stretch';
+    const meta = p.found
+      ? `<span style="color:#888;font-size:13px">${p.author} · ${p.dynasty}</span>`
+      : `<span style="color:#e74c3c;font-size:13px">未在库中</span>`;
+    div.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div><b style="font-size:17px">${escapeHtml(p.title)}</b> ${meta}</div>
+        <div class="toggle">
+          <button onclick="markOne(${i},true,this)">对</button>
+          <button onclick="markOne(${i},false,this)">错</button>
+        </div>
+      </div>
+      <div style="font-size:15px;line-height:1.8;white-space:pre-wrap;color:#333;background:#f8f9fc;padding:10px;border-radius:6px">${escapeHtml(p.content)}</div>
+    `;
+    box.appendChild(div);
+  });
+}
+function submitComposition(){
+  if(cState.marks.some(m=>m===null)){
+    if(!confirm('还有未勾选的诗，按错误处理？')) return;
+    cState.marks = cState.marks.map(m=>m===null?false:m);
+  }
+  const wrongs = cState.poems.filter((_,i)=>cState.marks[i]===false);
+  const correct = cState.poems.length - wrongs.length;
+  const rate = Math.round(correct*100/cState.poems.length);
+  const ts = Date.now();
+  const errs = wrongs.map(p=>({
+    type:'comp', ts,
+    title:p.title,
+    text:`${p.title}（${p.author} · ${p.dynasty}）`,
+    answer:p.content
+  }));
+  appendErrors(errs);
+  appendHistory({type:'comp', ts, total:cState.poems.length, correct, rate});
+  document.getElementById('r-rate').textContent = rate + '%';
+  document.getElementById('r-meta').textContent = `共 ${cState.poems.length} 首，正确 ${correct}，错误 ${wrongs.length}`;
   show('view-result');
 }
 
@@ -522,7 +663,7 @@ function handleVoice(text){
     if(/下一个|继续|next/i.test(text)) nextWord();
     else if(/再读|重读|重复/.test(text)) speakCurrent();
   } else if(recMode==='comp'){
-    if(/好了|完成|done|结束/i.test(text)) finishComposition();
+    if(/下一首|下一个|完成|好了|done|next/i.test(text)) nextComposition();
     else if(/重读|再读/.test(text)) speakCompositionTitle();
   }
 }
@@ -532,8 +673,7 @@ function loadSample(t){
   if(t==='d'){
     document.getElementById('d-input').value = '举世闻名、设计、创举、减轻、不但……而且、坚固、美观、体现、才干、宝贵、历史、文化、赵州桥、拱形、济南、栏杆\n• 多音字：爪\n鹰爪zhǎo、凤爪zhǎo、爪zhǎo牙、张牙舞爪zhǎo\n鸡爪zhuǎ、鸭爪zhuǎ、爪zhuǎ子';
   } else {
-    document.getElementById('c-title').value = '静夜思';
-    document.getElementById('c-content').value = '床前明月光，疑是地上霜。\n举头望明月，低头思故乡。';
+    document.getElementById('c-titles').value = '静夜思\n望庐山瀑布\n春晓\n登鹳雀楼\n咏柳';
   }
 }
 
